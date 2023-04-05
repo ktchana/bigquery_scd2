@@ -21,7 +21,8 @@
             '',
             'pk1,pk2',
             'start_date',
-            'end_date'
+            'end_date',
+            ''
             );
  */
 CREATE OR REPLACE PROCEDURE test.perform_scd2_transform (
@@ -33,13 +34,16 @@ CREATE OR REPLACE PROCEDURE test.perform_scd2_transform (
     source_table_filter STRING, -- WHERE clause condition to filter out source table (e.g., by ingestion date)
     primary_keys STRING, -- comma separated list of key column
     start_date_column STRING, -- DATE, DATETIME or TIMESTAMP
-    end_date_column STRING -- DATE, DATETIME or TIMESTAMP
+    end_date_column STRING, -- DATE, DATETIME or TIMESTAMP
+    target_columns_to_update STRING -- Statement fragment to set column values on update (field1 = 'X', field2 = 5). 
+                                    -- This will be appended to the update portion of the merge statement.
 )
 BEGIN 
     -- Variables for Customisation
     DECLARE numeric_nullvalue DEFAULT '-1';
     DECLARE string_nullvalue DEFAULT '\'NULL\'';
     DECLARE date_nullvalue DEFAULT '\'1900-01-01\'';
+    DECLARE new_record_end_date DEFAULT '\"9999-12-31 23:59:59\"';
 
     -- Internal Variables
     DECLARE target_table_name_full STRING;
@@ -56,12 +60,17 @@ BEGIN
     DECLARE column_list DEFAULT '';
     DECLARE merge_statement DEFAULT '';
     DECLARE filter_clause DEFAULT '';
+    DECLARE update_clause DEFAULT '';
 
     SET target_table_name_full = CONCAT(project_id, '.', target_dataset_id, '.', target_table_name);
     SET source_table_name_full = CONCAT(project_id, '.', source_dataset_id, '.', source_table_name);
 
     IF length(source_table_filter) > 0 THEN
         SET filter_clause = CONCAT(' WHERE ', source_table_filter);
+    END IF;
+
+    IF length(target_columns_to_update) > 0 THEN
+        SET update_clause = CONCAT(', ', target_columns_to_update);
     END IF;
 
     -- get column details from INFORMATION_SCHEMA
@@ -166,7 +175,7 @@ BEGIN
     END FOR;
     SET nonkey_join_cond = RTRIM(nonkey_join_cond, ' OR ');
     SET nonkey_join_cond = concat('(', nonkey_join_cond, ')');
-    SET nonkey_join_cond_w_end_date = concat(nonkey_join_cond, ' AND T.', end_date_column,' = ', date_column_type, ' \"9999-12-31 23:59:59\"');
+    SET nonkey_join_cond_w_end_date = concat(nonkey_join_cond, ' AND T.', end_date_column,' = ', date_column_type, ' ', new_record_end_date);
 
     -- combine all the statement fragments into the final merge statement
     SET merge_statement = concat('MERGE INTO `', target_table_name_full, '` T ',
@@ -179,11 +188,11 @@ BEGIN
             '    ', filter_clause, '',
             ') S ',
             'ON ', key_join_cond, ' ',
-            'WHEN MATCHED AND ', nonkey_join_cond, ' THEN UPDATE ',
-            'SET ', end_date_column, ' = CURRENT_', date_column_type, '() ',
+            'WHEN MATCHED AND (', nonkey_join_cond_w_end_date, ') THEN UPDATE ',
+            'SET ', end_date_column, ' = CURRENT_', date_column_type, '() ', update_clause, ' ',
             'WHEN NOT MATCHED THEN ',
             '  INSERT (', column_list, ', ', start_date_column, ', ', end_date_column, ')',
-            '  VALUES (', column_list, ', CURRENT_', date_column_type, '(), ', date_column_type, ' "9999-12-31 23:59:59")'
+            '  VALUES (', column_list, ', CURRENT_', date_column_type, '(), ', date_column_type, ' ', new_record_end_date, ')'
     );
 
     EXECUTE IMMEDIATE merge_statement;
