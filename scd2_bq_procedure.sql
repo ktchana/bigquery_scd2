@@ -35,7 +35,7 @@ CREATE OR REPLACE PROCEDURE test.perform_scd2_transform (
     primary_keys STRING, -- comma separated list of key column
     start_date_column STRING, -- DATE, DATETIME or TIMESTAMP
     end_date_column STRING, -- DATE, DATETIME or TIMESTAMP
-    target_columns_to_update STRING -- Statement fragment to set column values on update (field1 = 'X', field2 = 5). 
+    target_columns_to_update STRING -- Statement fragment to set column values on update (e.g., 'field1 = \'X\', field2 = 5'). 
                                     -- This will be appended to the update portion of the merge statement.
 )
 BEGIN 
